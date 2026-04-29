@@ -238,14 +238,14 @@ export default function SearchScreen() {
           uri:
             item.poster?.startsWith("http://") ||
             item.poster?.startsWith("https://")
-              ? item.poster
+              ? item.poster || ""
               : `${STATIC_BASE_URL}${item.poster || ""}`,
         }}
         style={styles.poster}
       />
       <View style={styles.cardInfo}>
         <Text style={styles.cardTitle}>{item.title}</Text>
-        <Text style={styles.cardTitleEn}>{item.titleEn}</Text>
+        <Text style={styles.cardTitleEn}>{item.title_en}</Text>
         <View style={styles.detailsRow}>
           <Text style={styles.rating}>⭐ {formatRating(item.rating)}</Text>
           <Text style={styles.year}>{item.year}</Text>

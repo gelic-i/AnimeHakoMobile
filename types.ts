@@ -9,53 +9,50 @@ export interface User {
 export interface Anime {
   id: number;
   title: string;
-  titleEn: string;
-  titleJp?: string;
-  poster: string;
-  cover?: string;
-  description: string;
-  rating: number;
-  year: number;
-  season?: string;
-  status: string;
-  episodes: number;
-  duration?: number;
-  studio?: string;
+  title_en: string | null;
+  title_jp?: string | null;
+  poster: string | null;
+  cover?: string | null;
+  description: string | null;
+  rating: number | null;
+  year: number | null;
+  season?: string | null;
+  status?: string | null;
+  episodes: number | null;
+  duration?: number | null;
+  studio?: string | null;
   genres: string[];
   tags?: string[];
 }
 
 export interface AnimeListItem {
-  animeId: number;
-  status: "watching" | "completed" | "dropped" | "planned";
-  score: number;
-  episodesWatched: number;
-  isFavorite: boolean;
-  anime?: {
-    id: number;
-    title: string;
-    titleEn?: string;
-    poster?: string;
-    rating?: number;
-    year?: number;
-    episodes?: number;
-    genres?: string[];
-  };
+  id: number;
+  title: string;
+  title_en: string | null;
+  poster: string | null;
+  rating: number | null;
+  year: number | null;
+  episodes: number | null;
+  genres: string[];
 }
 
-export interface Screenshot {
-  id: number;
-  url: string;
+export interface UserAnimeItem {
+  anime_id: number;
+  status: "watching" | "completed" | "dropped" | "planned" | null;
+  score: number | null;
+  episodes_watched: number;
+  is_favorite: boolean;
+  anime: AnimeListItem | null;
 }
 
 export interface Review {
   id: number;
-  animeId: number;
-  authorName: string;
+  anime_id: number;
+  author_name: string;
   title: string;
   content: string;
-  score: number;
-  createdAt: string;
+  score: number | null;
+  created_at: string;
 }
 
 export type AnimeStatus = "watching" | "completed" | "dropped" | "planned";

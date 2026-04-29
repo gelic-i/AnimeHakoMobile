@@ -21,7 +21,6 @@ import {
   Anime,
   AnimeStatus,
   Review,
-  Screenshot,
   STATUS_LABELS,
 } from "../../types";
 
@@ -37,7 +36,7 @@ const formatRating = (rating: any): string => {
 export default function AnimeDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const [anime, setAnime] = useState<Anime | null>(null);
-  const [screenshots, setScreenshots] = useState<Screenshot[]>([]);
+  const [screenshots, setScreenshots] = useState<string[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [userStatus, setUserStatus] = useState<AnimeStatus | null>(null);
   const [isFavorite, setIsFavorite] = useState(false);
@@ -46,6 +45,7 @@ export default function AnimeDetailScreen() {
   const router = useRouter();
 
   const loadData = useCallback(async () => {
+    if (!id) return;
     console.log("🟡 loadData началась для id:", id);
     try {
       const token = await AsyncStorage.getItem(STORAGE_KEYS.TOKEN);
@@ -64,22 +64,25 @@ export default function AnimeDetailScreen() {
             : Promise.resolve(null),
         ]);
 
+      if (!animeRes.ok) throw new Error("Failed to fetch anime");
       const animeData = await animeRes.json();
+      if (!screenshotsRes.ok) throw new Error("Failed to fetch screenshots");
       const screenshotsData = await screenshotsRes.json();
+      if (!reviewsRes.ok) throw new Error("Failed to fetch reviews");
       const reviewsData = await reviewsRes.json();
 
-      setAnime(animeData);
-      setScreenshots(screenshotsData);
-      setReviews(reviewsData);
+      setAnime(animeData?.id ? animeData : null);
+      setScreenshots(screenshotsData.screenshots || []);
+      setReviews(Array.isArray(reviewsData) ? reviewsData : []);
 
       if (userAnimeRes && userAnimeRes.ok) {
         const userAnimeData = await userAnimeRes.json();
-        const userEntry = Array.isArray(userAnimeData) 
-          ? userAnimeData.find((item: any) => item.animeId === parseInt(id))
-          : userAnimeData?.data?.find((item: any) => item.animeId === parseInt(id));
+        const userEntry = Array.isArray(userAnimeData)
+          ? userAnimeData.find((item: any) => item.anime_id === parseInt(id))
+          : userAnimeData?.data?.find((item: any) => item.anime_id === parseInt(id));
         if (userEntry) {
           setUserStatus(userEntry.status);
-          setIsFavorite(userEntry.isFavorite);
+          setIsFavorite(userEntry.is_favorite);
         }
       }
     } catch (error) {
@@ -218,8 +221,8 @@ export default function AnimeDetailScreen() {
       <View style={styles.content}>
         <View style={styles.titleContainer}>
           <Text style={styles.title}>{anime.title}</Text>
-          {anime.titleEn && <Text style={styles.titleEn}>{anime.titleEn}</Text>}
-          {anime.titleJp && <Text style={styles.titleJp}>{anime.titleJp}</Text>}
+          {anime.title_en && <Text style={styles.title_en}>{anime.title_en}</Text>}
+          {anime.title_jp && <Text style={styles.title_jp}>{anime.title_jp}</Text>}
         </View>
 
         <View style={styles.ratingRow}>
@@ -335,12 +338,12 @@ export default function AnimeDetailScreen() {
               data={screenshots}
               horizontal
               showsHorizontalScrollIndicator={false}
-              renderItem={({ item }) => (
-                <TouchableOpacity onPress={() => setSelectedImage(item.url)}>
-                  <Image source={{ uri: item.url }} style={styles.screenshot} />
+              renderItem={({ item, index }) => (
+                <TouchableOpacity key={index} onPress={() => setSelectedImage(item)}>
+                  <Image source={{ uri: item }} style={styles.screenshot} />
                 </TouchableOpacity>
               )}
-              keyExtractor={(item) => item.id.toString()}
+              keyExtractor={(item, index) => String(index)}
               contentContainerStyle={styles.screenshotsList}
             />
           </View>
@@ -349,10 +352,10 @@ export default function AnimeDetailScreen() {
         {reviews.length > 0 && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Обзоры</Text>
-            {reviews.map((review) => (
-              <View key={review.id} style={styles.reviewCard}>
+            {reviews.map((review, idx) => (
+              <View key={review.id ?? `review-${idx}`} style={styles.reviewCard}>
                 <View style={styles.reviewHeader}>
-                  <Text style={styles.reviewAuthor}>{review.authorName}</Text>
+                  <Text style={styles.reviewAuthor}>{review.author_name}</Text>
                   <Text style={styles.reviewScore}>⭐ {review.score}</Text>
                 </View>
                 <Text style={styles.reviewTitle}>{review.title}</Text>
@@ -360,7 +363,7 @@ export default function AnimeDetailScreen() {
                   {review.content}
                 </Text>
                 <Text style={styles.reviewDate}>
-                  {new Date(review.createdAt).toLocaleDateString()}
+                  {new Date(review.created_at).toLocaleDateString()}
                 </Text>
               </View>
             ))}
@@ -406,12 +409,12 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#1e293b",
   },
-  titleEn: {
+  title_en: {
     fontSize: 14,
     color: "#64748b",
     marginTop: 4,
   },
-  titleJp: {
+  title_jp: {
     fontSize: 14,
     color: "#94a3b8",
     marginTop: 2,

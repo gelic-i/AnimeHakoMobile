@@ -10,20 +10,23 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
 import { API_BASE_URL, STORAGE_KEYS } from "../../config";
-import { AnimeListItem, AnimeStatus, STATUS_LABELS, User } from "../../types";
+import { User } from "../../types";
 
 export default function ProfileScreen() {
   const [user, setUser] = useState<User | null>(null);
-  const [userAnime, setUserAnime] = useState<AnimeListItem[]>([]);
-  const [activeTab, setActiveTab] = useState<
-    "watching" | "completed" | "dropped" | "planned" | "favorites"
-  >("watching");
+  const [userAnimeCount, setUserAnimeCount] = useState(0);
+  const [completedCount, setCompletedCount] = useState(0);
+  const [watchingCount, setWatchingCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [username, setUsername] = useState("");
+  const [avatarUrl, setAvatarUrl] = useState("");
   const router = useRouter();
 
   const loadProfile = useCallback(async () => {
@@ -50,11 +53,14 @@ export default function ProfileScreen() {
 
       const profileData = await profileRes.json();
       const animeData = await animeRes.json();
+      const animeList = Array.isArray(animeData) ? animeData : [];
 
       setUser(profileData);
-      setUserAnime(Array.isArray(animeData) ? animeData : (animeData.data || []));
-
-      console.log("📊 Загружено аниме в профиле:", animeData.data?.length || 0);
+      setUsername(profileData.username || "");
+      setAvatarUrl(profileData.avatar || "");
+      setUserAnimeCount(animeList.length);
+      setCompletedCount(animeList.filter((i: any) => i.status === "completed").length);
+      setWatchingCount(animeList.filter((i: any) => i.status === "watching").length);
     } catch (error) {
       console.error("Ошибка загрузки профиля:", error);
     } finally {
@@ -65,12 +71,16 @@ export default function ProfileScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      console.log("🔄 Профиль в фокусе, обновляем данные...");
       loadProfile();
     }, [loadProfile]),
   );
 
-  const handleLogout = async () => {
+  const onRefresh = () => {
+    setRefreshing(true);
+    loadProfile();
+  };
+
+  const handleLogout = () => {
     Alert.alert("Выход", "Вы уверены, что хотите выйти?", [
       { text: "Отмена", style: "cancel" },
       {
@@ -85,85 +95,40 @@ export default function ProfileScreen() {
     ]);
   };
 
-  const onRefresh = () => {
-    setRefreshing(true);
-    loadProfile();
-  };
-
-  // Фильтруем аниме в зависимости от выбранной вкладки
-  const getFilteredAnime = () => {
-    if (activeTab === "favorites") {
-      return userAnime.filter((item) => item.isFavorite === true);
-    }
-    return userAnime.filter((item) => item.status === activeTab);
-  };
-
-  const filteredAnime = getFilteredAnime();
-
-  const statusCounts = {
-    watching: userAnime.filter((i) => i.status === "watching").length,
-    completed: userAnime.filter((i) => i.status === "completed").length,
-    dropped: userAnime.filter((i) => i.status === "dropped").length,
-    planned: userAnime.filter((i) => i.status === "planned").length,
-    favorites: userAnime.filter((i) => i.isFavorite === true).length,
-  };
-
-  const updateAnimeStatus = async (animeId: number, newStatus: AnimeStatus) => {
+  const handleUpdateProfile = async () => {
     try {
       const token = await AsyncStorage.getItem(STORAGE_KEYS.TOKEN);
-      const response = await fetch(`${API_BASE_URL}/user/anime/${animeId}`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ status: newStatus }),
-      });
+      const body: any = {};
+      if (username !== user?.username) body.username = username;
+      if (avatarUrl !== (user?.avatar || "")) body.avatar = avatarUrl;
 
-      if (response.ok) {
-        console.log("✅ Статус обновлён, перезагружаем профиль");
-        loadProfile();
+      if (Object.keys(body).length > 0) {
+        const res = await fetch(`${API_BASE_URL}/user/me`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(body),
+        });
+        if (res.ok) {
+          Alert.alert("Успех", "Профиль обновлён");
+          loadProfile();
+        } else {
+          const err = await res.json();
+          Alert.alert("Ошибка", err.detail || "Не удалось обновить профиль");
+        }
       }
+      setEditMode(false);
     } catch (error) {
-      console.error("Ошибка обновления:", error);
+      Alert.alert("Ошибка", "Не удалось обновить профиль");
     }
   };
 
-  const removeFromList = async (animeId: number) => {
-    Alert.alert("Удалить", "Удалить аниме из списка?", [
-      { text: "Отмена", style: "cancel" },
-      {
-        text: "Удалить",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            const token = await AsyncStorage.getItem(STORAGE_KEYS.TOKEN);
-            await fetch(`${API_BASE_URL}/user/anime/${animeId}`, {
-              method: "DELETE",
-              headers: { Authorization: `Bearer ${token}` },
-            });
-            console.log("✅ Аниме удалено, перезагружаем профиль");
-            loadProfile();
-          } catch (error) {
-            console.error("Ошибка удаления:", error);
-          }
-        },
-      },
-    ]);
-  };
-
-  const removeFromFavorites = async (animeId: number) => {
-    try {
-      const token = await AsyncStorage.getItem(STORAGE_KEYS.TOKEN);
-      await fetch(`${API_BASE_URL}/user/favorites/${animeId}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      console.log("✅ Удалено из избранного, перезагружаем профиль");
-      loadProfile();
-    } catch (error) {
-      console.error("Ошибка удаления из избранного:", error);
-    }
+  const handleCancelEdit = () => {
+    setEditMode(false);
+    setUsername(user?.username || "");
+    setAvatarUrl(user?.avatar || "");
   };
 
   if (loading) {
@@ -193,382 +158,88 @@ export default function ProfileScreen() {
             </View>
           )}
         </View>
+        {!editMode && (
+          <TouchableOpacity onPress={() => setEditMode(true)}>
+            <Ionicons name="create-outline" size={22} color="#6366f1" style={styles.editIcon} />
+          </TouchableOpacity>
+        )}
         <Text style={styles.username}>{user?.username}</Text>
         <Text style={styles.email}>{user?.email}</Text>
-
-        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-          <Ionicons name="log-out-outline" size={20} color="#ef4444" />
-          <Text style={styles.logoutText}>Выйти</Text>
-        </TouchableOpacity>
       </View>
 
       <View style={styles.statsContainer}>
         <View style={styles.statItem}>
-          <Text style={styles.statNumber}>{userAnime.length}</Text>
+          <Text style={styles.statNumber}>{userAnimeCount}</Text>
           <Text style={styles.statLabel}>Всего</Text>
         </View>
         <View style={styles.statItem}>
-          <Text style={styles.statNumber}>{statusCounts.completed}</Text>
+          <Text style={styles.statNumber}>{completedCount}</Text>
           <Text style={styles.statLabel}>Просмотрено</Text>
         </View>
         <View style={styles.statItem}>
-          <Text style={styles.statNumber}>{statusCounts.watching}</Text>
+          <Text style={styles.statNumber}>{watchingCount}</Text>
           <Text style={styles.statLabel}>Смотрю</Text>
         </View>
       </View>
 
-      <View style={styles.tabsContainer}>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === "watching" && styles.activeTab]}
-          onPress={() => setActiveTab("watching")}
-        >
-          <Text
-            style={[
-              styles.tabText,
-              activeTab === "watching" && styles.activeTabText,
-            ]}
-          >
-            📺 {STATUS_LABELS.watching} ({statusCounts.watching})
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.tab, activeTab === "completed" && styles.activeTab]}
-          onPress={() => setActiveTab("completed")}
-        >
-          <Text
-            style={[
-              styles.tabText,
-              activeTab === "completed" && styles.activeTabText,
-            ]}
-          >
-            ✅ {STATUS_LABELS.completed} ({statusCounts.completed})
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.tab, activeTab === "dropped" && styles.activeTab]}
-          onPress={() => setActiveTab("dropped")}
-        >
-          <Text
-            style={[
-              styles.tabText,
-              activeTab === "dropped" && styles.activeTabText,
-            ]}
-          >
-            ❌ {STATUS_LABELS.dropped} ({statusCounts.dropped})
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.tab, activeTab === "planned" && styles.activeTab]}
-          onPress={() => setActiveTab("planned")}
-        >
-          <Text
-            style={[
-              styles.tabText,
-              activeTab === "planned" && styles.activeTabText,
-            ]}
-          >
-            📅 {STATUS_LABELS.planned} ({statusCounts.planned})
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.tab, activeTab === "favorites" && styles.activeTab]}
-          onPress={() => setActiveTab("favorites")}
-        >
-          <Text
-            style={[
-              styles.tabText,
-              activeTab === "favorites" && styles.activeTabText,
-            ]}
-          >
-            ❤️ Избранное ({statusCounts.favorites})
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {filteredAnime.length === 0 ? (
-        <View style={styles.emptyList}>
-          <Text style={styles.emptyText}>
-            {activeTab === "favorites"
-              ? "Нет любимых аниме"
-              : `Нет аниме в списке "${STATUS_LABELS[activeTab as AnimeStatus] || "Избранное"}"`}
-          </Text>
-          <Text style={styles.emptySubtext}>
-            {activeTab === "favorites"
-              ? "Нажмите на сердечко в карточке аниме, чтобы добавить его в любимое"
-              : 'Добавьте аниме из карточки, нажав "Добавить в список"'}
-          </Text>
+      {editMode && (
+        <View style={styles.editPanel}>
+          <Text style={styles.editTitle}>Редактирование профиля</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Имя пользователя"
+            value={username}
+            onChangeText={setUsername}
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="URL аватарки"
+            value={avatarUrl}
+            onChangeText={setAvatarUrl}
+            autoCapitalize="none"
+          />
+          <View style={styles.btnRow}>
+            <TouchableOpacity style={styles.cancelBtn} onPress={handleCancelEdit}>
+              <Text style={styles.cancelBtnText}>Отмена</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.saveBtn} onPress={handleUpdateProfile}>
+              <Text style={styles.saveBtnText}>Сохранить</Text>
+            </TouchableOpacity>
+          </View>
         </View>
-      ) : (
-        filteredAnime.map((item) => (
-          <TouchableOpacity
-            key={item.animeId}
-            style={styles.animeItem}
-            onPress={() => router.push(`/anime/${item.animeId}`)}
-          >
-            <View style={styles.animeInfo}>
-              <Text style={styles.animeTitle}>{item.anime?.title || `Аниме #${item.animeId}`}</Text>
-              <View style={styles.animeDetails}>
-                <Text style={styles.score}>Оценка: {item.score || "—"}</Text>
-                <Text style={styles.episodes}>
-                  Эпизодов: {item.episodesWatched}
-                </Text>
-                {item.isFavorite && (
-                  <View style={styles.favoriteBadge}>
-                    <Text style={styles.favoriteBadgeText}>❤️ Любимое</Text>
-                  </View>
-                )}
-              </View>
-            </View>
-            <View style={styles.animeActions}>
-              {activeTab !== "favorites" && (
-                <TouchableOpacity
-                  onPress={() => {
-                    const statuses: AnimeStatus[] = [
-                      "watching",
-                      "completed",
-                      "dropped",
-                      "planned",
-                    ];
-                    const currentIndex = statuses.indexOf(item.status);
-                    const nextStatus =
-                      statuses[(currentIndex + 1) % statuses.length];
-                    updateAnimeStatus(item.animeId, nextStatus);
-                  }}
-                  style={styles.statusButton}
-                >
-                  <Text style={styles.statusButtonText}>
-                    {STATUS_LABELS[item.status]}
-                  </Text>
-                </TouchableOpacity>
-              )}
-              {activeTab === "favorites" && (
-                <TouchableOpacity
-                  onPress={() => removeFromFavorites(item.animeId)}
-                  style={styles.removeFavoriteButton}
-                >
-                  <Ionicons name="heart-dislike" size={20} color="#ef4444" />
-                  <Text style={styles.removeFavoriteText}>Убрать</Text>
-                </TouchableOpacity>
-              )}
-              <TouchableOpacity
-                onPress={() => removeFromList(item.animeId)}
-                style={styles.deleteButton}
-              >
-                <Ionicons name="trash-outline" size={20} color="#ef4444" />
-              </TouchableOpacity>
-            </View>
-          </TouchableOpacity>
-        ))
       )}
+
+      <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+        <Ionicons name="log-out-outline" size={20} color="#ef4444" />
+        <Text style={styles.logoutText}>Выйти</Text>
+      </TouchableOpacity>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#f8fafc",
-  },
-  center: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  header: {
-    backgroundColor: "#fff",
-    alignItems: "center",
-    paddingVertical: 24,
-    borderBottomWidth: 1,
-    borderBottomColor: "#e2e8f0",
-  },
-  avatarContainer: {
-    marginBottom: 12,
-  },
-  avatar: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-  },
-  avatarPlaceholder: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: "#6366f1",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  avatarText: {
-    fontSize: 36,
-    fontWeight: "bold",
-    color: "#fff",
-  },
-  username: {
-    fontSize: 24,
-    fontWeight: "700",
-    color: "#1e293b",
-  },
-  email: {
-    fontSize: 14,
-    color: "#64748b",
-    marginTop: 4,
-  },
-  logoutButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 16,
-    gap: 8,
-  },
-  logoutText: {
-    color: "#ef4444",
-    fontSize: 14,
-  },
-  statsContainer: {
-    flexDirection: "row",
-    backgroundColor: "#fff",
-    paddingVertical: 16,
-    marginTop: 12,
-    marginHorizontal: 16,
-    borderRadius: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    elevation: 2,
-  },
-  statItem: {
-    flex: 1,
-    alignItems: "center",
-  },
-  statNumber: {
-    fontSize: 22,
-    fontWeight: "700",
-    color: "#6366f1",
-  },
-  statLabel: {
-    fontSize: 12,
-    color: "#64748b",
-    marginTop: 4,
-  },
-  tabsContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    marginTop: 20,
-    marginHorizontal: 16,
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 4,
-  },
-  tab: {
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    alignItems: "center",
-    borderRadius: 8,
-    margin: 2,
-  },
-  activeTab: {
-    backgroundColor: "#6366f1",
-  },
-  tabText: {
-    fontSize: 12,
-    color: "#64748b",
-  },
-  activeTabText: {
-    color: "#fff",
-    fontWeight: "600",
-  },
-  emptyList: {
-    padding: 40,
-    alignItems: "center",
-  },
-  emptyText: {
-    color: "#94a3b8",
-    fontSize: 14,
-  },
-  emptySubtext: {
-    color: "#cbd5e1",
-    fontSize: 12,
-    marginTop: 8,
-    textAlign: "center",
-  },
-  animeItem: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    backgroundColor: "#fff",
-    marginHorizontal: 16,
-    marginTop: 12,
-    padding: 16,
-    borderRadius: 12,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    elevation: 2,
-  },
-  animeInfo: {
-    flex: 1,
-  },
-  animeTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#1e293b",
-  },
-  animeDetails: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    marginTop: 6,
-    gap: 12,
-  },
-  score: {
-    fontSize: 13,
-    color: "#f59e0b",
-  },
-  episodes: {
-    fontSize: 13,
-    color: "#64748b",
-  },
-  favoriteBadge: {
-    backgroundColor: "#fee2e2",
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 12,
-  },
-  favoriteBadgeText: {
-    fontSize: 10,
-    color: "#ef4444",
-  },
-  animeActions: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  statusButton: {
-    backgroundColor: "#e0e7ff",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  statusButtonText: {
-    fontSize: 12,
-    color: "#6366f1",
-    fontWeight: "500",
-  },
-  removeFavoriteButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#fee2e2",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 20,
-    gap: 4,
-  },
-  removeFavoriteText: {
-    fontSize: 11,
-    color: "#ef4444",
-  },
-  deleteButton: {
-    padding: 4,
-  },
+  container: { flex: 1, backgroundColor: "#f8fafc" },
+  center: { flex: 1, justifyContent: "center", alignItems: "center" },
+  header: { backgroundColor: "#fff", alignItems: "center", paddingVertical: 24, borderBottomWidth: 1, borderBottomColor: "#e2e8f0" },
+  avatarContainer: { marginBottom: 8 },
+  avatar: { width: 80, height: 80, borderRadius: 40 },
+  avatarPlaceholder: { width: 80, height: 80, borderRadius: 40, backgroundColor: "#6366f1", justifyContent: "center", alignItems: "center" },
+  avatarText: { fontSize: 36, fontWeight: "bold", color: "#fff" },
+  editIcon: { marginTop: 8 },
+  username: { fontSize: 24, fontWeight: "700", color: "#1e293b" },
+  email: { fontSize: 14, color: "#64748b", marginTop: 4 },
+  statsContainer: { flexDirection: "row", backgroundColor: "#fff", paddingVertical: 16, marginTop: 12, marginHorizontal: 16, borderRadius: 16, shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, elevation: 2 },
+  statItem: { flex: 1, alignItems: "center" },
+  statNumber: { fontSize: 22, fontWeight: "700", color: "#6366f1" },
+  statLabel: { fontSize: 12, color: "#64748b", marginTop: 4 },
+  editPanel: { backgroundColor: "#fff", marginHorizontal: 16, marginTop: 16, padding: 16, borderRadius: 12 },
+  editTitle: { fontSize: 16, fontWeight: "600", color: "#1e293b", marginBottom: 16, textAlign: "center" },
+  input: { backgroundColor: "#f1f5f9", borderRadius: 8, padding: 12, fontSize: 14, marginBottom: 12 },
+  btnRow: { flexDirection: "row", gap: 12, marginTop: 8 },
+  saveBtn: { flex: 1, backgroundColor: "#6366f1", padding: 12, borderRadius: 8, alignItems: "center" },
+  saveBtnText: { color: "#fff", fontWeight: "600" },
+  cancelBtn: { flex: 1, backgroundColor: "#e2e8f0", padding: 12, borderRadius: 8, alignItems: "center" },
+  cancelBtnText: { color: "#64748b", fontWeight: "600" },
+  logoutButton: { flexDirection: "row", alignItems: "center", justifyContent: "center", marginVertical: 32, gap: 8 },
+  logoutText: { color: "#ef4444", fontSize: 16 },
 });
